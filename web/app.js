@@ -25,8 +25,7 @@ import { AppOptions, OptionKind } from './app_options';
 import {
   build, createObjectURL, getDocument, getFilenameFromUrl, GlobalWorkerOptions,
   InvalidPDFException, LinkTarget, loadScript, MissingPDFException, OPS,
-  PDFWorker, shadow, UnexpectedResponseException, UNSUPPORTED_FEATURES, URL,
-  version
+  PDFWorker, shadow, UnexpectedResponseException, UNSUPPORTED_FEATURES, version
 } from 'pdfjs-lib';
 import { CursorTool, PDFCursorTools } from './pdf_cursor_tools';
 import { PDFRenderingQueue, RenderingStates } from './pdf_rendering_queue';
@@ -235,11 +234,6 @@ let PDFViewerApplication = {
     }
     if ('verbosity' in hashParams) {
       AppOptions.set('verbosity', hashParams['verbosity'] | 0);
-    }
-    if ((typeof PDFJSDev === 'undefined' || !PDFJSDev.test('PRODUCTION')) &&
-        hashParams['disablebcmaps'] === 'true') {
-      AppOptions.set('cMapUrl', '../external/cmaps/');
-      AppOptions.set('cMapPacked', false);
     }
     if ('textlayer' in hashParams) {
       switch (hashParams['textlayer']) {
@@ -615,9 +609,9 @@ let PDFViewerApplication = {
   /**
    * Opens PDF document specified by URL or array with additional arguments.
    * @param {string|TypedArray|ArrayBuffer} file - PDF location or binary data.
-   * @param {Object} args - (optional) Additional arguments for the getDocument
-   *                        call, e.g. HTTP headers ('httpHeaders') or
-   *                        alternative data transport ('range').
+   * @param {Object} [args] - Additional arguments for the getDocument call,
+   *                          e.g. HTTP headers ('httpHeaders') or alternative
+   *                          data transport ('range').
    * @returns {Promise} - Returns the promise, which is resolved when document
    *                      is opened.
    */
@@ -673,6 +667,7 @@ let PDFViewerApplication = {
     this.pdfLoadingTask = loadingTask;
 
     loadingTask.onPassword = (updateCallback, reason) => {
+      this.pdfLinkService.externalLinkEnabled = false;
       this.passwordPrompt.setUpdateCallback(updateCallback, reason);
       this.passwordPrompt.open();
     };
@@ -769,10 +764,10 @@ let PDFViewerApplication = {
 
   /**
    * Show the error box.
-   * @param {String} message A message that is human readable.
-   * @param {Object} moreInfo (optional) Further information about the error
-   *                            that is more technical.  Should have a 'message'
-   *                            and optionally a 'stack' property.
+   * @param {string} message - A message that is human readable.
+   * @param {Object} [moreInfo] - Further information about the error that is
+   *                              more technical.  Should have a 'message' and
+   *                              optionally a 'stack' property.
    */
   error(message, moreInfo) {
     let moreInfoText = [this.l10n.get('error_version_info',
@@ -943,8 +938,13 @@ let PDFViewerApplication = {
       }).catch(() => { /* Unable to read from storage; ignoring errors. */ });
 
       Promise.all([
-        storePromise, pageLayoutPromise, pageModePromise, openActionDestPromise,
-      ]).then(async ([values = {}, pageLayout, pageMode, openActionDest]) => {
+        animationStarted,
+        storePromise,
+        pageLayoutPromise,
+        pageModePromise,
+        openActionDestPromise,
+      ]).then(async ([timeStamp, values = {}, pageLayout, pageMode,
+                      openActionDest]) => {
         const viewOnLoad = AppOptions.get('viewOnLoad');
 
         this._initializePdfHistory({
@@ -1092,7 +1092,7 @@ let PDFViewerApplication = {
       });
     });
 
-    Promise.all([onePageRendered, animationStarted]).then(() => {
+    onePageRendered.then(() => {
       pdfDocument.getOutline().then((outline) => {
         this.pdfOutlineViewer.render({ outline, });
       });
@@ -1314,7 +1314,7 @@ let PDFViewerApplication = {
     }
   },
 
-  afterPrint: function pdfViewSetupAfterPrint() {
+  afterPrint() {
     if (this.printService) {
       this.printService.destroy();
       this.printService = null;
@@ -1654,10 +1654,6 @@ function webViewerInitialized() {
     }
   }, true);
 
-  appConfig.sidebar.toggleButton.addEventListener('click', function() {
-    PDFViewerApplication.pdfSidebar.toggle();
-  });
-
   try {
     webViewerOpenFileViaURL(file);
   } catch (reason) {
@@ -1742,6 +1738,7 @@ function webViewerPageRendered(evt) {
       PDFJSDev.test('FIREFOX || MOZCENTRAL')) {
     PDFViewerApplication.externalServices.reportTelemetry({
       type: 'pageInfo',
+      timestamp: evt.timestamp,
     });
     // It is a good time to report stream and font types.
     PDFViewerApplication.pdfDocument.getStats().then(function (stats) {
@@ -2286,7 +2283,8 @@ function webViewerKeyDown(evt) {
   let curElementTagName = curElement && curElement.tagName.toUpperCase();
   if (curElementTagName === 'INPUT' ||
       curElementTagName === 'TEXTAREA' ||
-      curElementTagName === 'SELECT') {
+      curElementTagName === 'SELECT' ||
+      (curElement && curElement.isContentEditable)) {
     // Make sure that the secondary toolbar is closed when Escape is pressed.
     if (evt.keyCode !== 27) { // 'Esc'
       return;

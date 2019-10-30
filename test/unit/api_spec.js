@@ -692,18 +692,15 @@ describe('api', function() {
       }).catch(done.fail);
     });
     it('gets attachments', function(done) {
-      if (isNodeJS()) { // The PDF file used is a linked test-case.
-        pending('TODO: Use a non-linked test-case.');
-      }
-      var loadingTask = getDocument(buildGetDocumentParams('bug766138.pdf'));
+      var loadingTask = getDocument(buildGetDocumentParams('attachment.pdf'));
       var promise = loadingTask.promise.then(function (pdfDoc) {
         return pdfDoc.getAttachments();
       });
       promise.then(function (data) {
-        var attachment = data['Press Quality.joboptions'];
-        expect(attachment.filename).toEqual('Press Quality.joboptions');
-        expect(attachment.content instanceof Uint8Array).toBeTruthy();
-        expect(attachment.content.length).toEqual(30098);
+        var attachment = data['foo.txt'];
+        expect(attachment.filename).toEqual('foo.txt');
+        expect(attachment.content).toEqual(
+          new Uint8Array([98, 97, 114, 32, 98, 97, 122, 32, 10]));
 
         loadingTask.destroy().then(done);
       }).catch(done.fail);
@@ -1065,9 +1062,35 @@ describe('api', function() {
     it('gets userUnit', function () {
       expect(page.userUnit).toEqual(1.0);
     });
-    it('gets view', function () {
+
+    it('gets view', function() {
       expect(page.view).toEqual([0, 0, 595.28, 841.89]);
     });
+    it('gets view, with empty/invalid bounding boxes', function(done) {
+      const viewLoadingTask = getDocument(buildGetDocumentParams(
+        'boundingBox_invalid.pdf'));
+
+      viewLoadingTask.promise.then((pdfDoc) => {
+        const numPages = pdfDoc.numPages;
+        expect(numPages).toEqual(3);
+
+        const viewPromises = [];
+        for (let i = 0; i < numPages; i++) {
+          viewPromises[i] = pdfDoc.getPage(i + 1).then((pdfPage) => {
+            return pdfPage.view;
+          });
+        }
+
+        Promise.all(viewPromises).then(([page1, page2, page3]) => {
+          expect(page1).toEqual([0, 0, 612, 792]);
+          expect(page2).toEqual([0, 0, 800, 600]);
+          expect(page3).toEqual([0, 0, 600, 800]);
+
+          viewLoadingTask.destroy().then(done);
+        });
+      }).catch(done.fail);
+    });
+
     it('gets viewport', function () {
       var viewport = page.getViewport({ scale: 1.5, rotation: 90, });
       expect(viewport.viewBox).toEqual(page.view);
@@ -1077,9 +1100,13 @@ describe('api', function() {
       expect(viewport.width).toEqual(1262.835);
       expect(viewport.height).toEqual(892.92);
     });
+    it('gets viewport with "offsetX/offsetY" arguments', function () {
+      const viewport = page.getViewport({ scale: 1, rotation: 0,
+                                          offsetX: 100, offsetY: -100, });
+      expect(viewport.transform).toEqual([1, 0, 0, -1, 100, 741.89]);
+    });
     it('gets viewport respecting "dontFlip" argument', function () {
-      const scale = 1;
-      const rotation = 135;
+      const scale = 1, rotation = 0;
       let viewport = page.getViewport({ scale, rotation, });
       let dontFlipViewport = page.getViewport({ scale, rotation,
                                                 dontFlip: true, });
